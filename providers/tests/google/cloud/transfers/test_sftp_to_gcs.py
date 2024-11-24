@@ -301,3 +301,45 @@ class TestSFTPToGCSOperator:
                 ),
             ]
         )
+
+    @mock.patch("airflow.providers.google.cloud.transfers.sftp_to_gcs.GCSHook")
+    @mock.patch("airflow.providers.google.cloud.transfers.sftp_to_gcs.SFTPHook")
+    def test_fail_on_file_not_exist(self, sftp_hook):
+        sftp_hook.return_value.retrieve_file.side_effect = FileNotFoundError
+
+        task = SFTPToGCSOperator(
+            task_id=TASK_ID,
+            source_path=SOURCE_OBJECT_NO_WILDCARD,
+            destination_bucket=TEST_BUCKET,
+            destination_path=DESTINATION_PATH_FILE,
+            move_object=False,
+            gcp_conn_id=GCP_CONN_ID,
+            sftp_conn_id=SFTP_CONN_ID,
+            fail_on_file_not_exist=True,
+        )
+
+        with pytest.raises(FileNotFoundError):
+            task.execute(None)
+
+    @mock.patch("airflow.providers.google.cloud.transfers.sftp_to_gcs.GCSHook")
+    @mock.patch("airflow.providers.google.cloud.transfers.sftp_to_gcs.SFTPHook")
+    def test_skip_on_file_not_exist(self, sftp_hook, gcs_hook):
+        sftp_hook.return_value.retrieve_file.side_effect = FileNotFoundError
+
+        task = SFTPToGCSOperator(
+            task_id=TASK_ID,
+            source_path=SOURCE_OBJECT_NO_WILDCARD,
+            destination_bucket=TEST_BUCKET,
+            destination_path=DESTINATION_PATH_FILE,
+            move_object=False,
+            gcp_conn_id=GCP_CONN_ID,
+            sftp_conn_id=SFTP_CONN_ID,
+            fail_on_file_not_exist=False,
+        )
+
+        task.execute(None)
+
+        sftp_hook.return_value.retrieve_file.assert_called_once_with(
+            SOURCE_OBJECT_NO_WILDCARD, mock.ANY, prefetch=True
+        )
+        gcs_hook.return_value.upload.assert_not_called()

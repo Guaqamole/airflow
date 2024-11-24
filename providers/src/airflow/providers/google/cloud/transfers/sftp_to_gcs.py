@@ -71,6 +71,8 @@ class SFTPToGCSOperator(BaseOperator):
         Service Account Token Creator IAM role to the directly preceding identity, with first
         account from the list granting this role to the originating account (templated).
     :param sftp_prefetch: Whether to enable SFTP prefetch, the default is True.
+    :param fail_on_file_not_exist: If True, operator fails when file does not exist,
+        if False, operator will not fail and skips transfer. the default is True.
     """
 
     template_fields: Sequence[str] = (
@@ -93,6 +95,7 @@ class SFTPToGCSOperator(BaseOperator):
         move_object: bool = False,
         impersonation_chain: str | Sequence[str] | None = None,
         sftp_prefetch: bool = True,
+        fail_on_file_not_exist: bool = True,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -107,6 +110,7 @@ class SFTPToGCSOperator(BaseOperator):
         self.move_object = move_object
         self.impersonation_chain = impersonation_chain
         self.sftp_prefetch = sftp_prefetch
+        self.fail_on_file_not_exist = fail_on_file_not_exist
 
     def execute(self, context: Context):
         self.destination_path = self._set_destination_path(self.destination_path)
@@ -162,6 +166,7 @@ class SFTPToGCSOperator(BaseOperator):
             destination_object,
         )
 
+    try:
         with NamedTemporaryFile("w") as tmp:
             sftp_hook.retrieve_file(source_path, tmp.name, prefetch=self.sftp_prefetch)
 
@@ -176,6 +181,11 @@ class SFTPToGCSOperator(BaseOperator):
         if self.move_object:
             self.log.info("Executing delete of %s", source_path)
             sftp_hook.delete_file(source_path)
+    except FileNotFoundError:
+        if self.fail_on_file_not_exist:
+            raise
+        else:
+            self.log.warning("File %s not found on SFTP server. Skipping transfer.", source_path)
 
     @staticmethod
     def _set_destination_path(path: str | None) -> str:
